@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cyberpunk Sudoku - Tournament Edition</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0a0a1a;
+            --grid-bg: #101028;
+            --primary-glow: #00ffff;
+            --secondary-glow: #ff00ff;
+            --accent-glow: #fcee0a;
+            --text-color: #e0e0e0;
+            --fixed-cell-color: #a0a0ff;
+            --input-cell-color: #00ffff;
+            --error-color: #ff3333;
+            --success-color: #33ff33;
+            --border-color: rgba(0, 255, 255, 0.3);
+            --border-thick-color: rgba(255, 0, 255, 0.7);
+            --font-main: 'Orbitron', sans-serif;
+            --font-body: 'Rajdhani', sans-serif;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: var(--font-body);
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+            background-image:
+                linear-gradient(rgba(10, 10, 26, 0.95), rgba(10, 10, 26, 0.95)),
+                url('https://placehold.co/1920x1080/0a0a1a/101028?text=GRID');
+            background-size: cover;
+        }
+
+        /* --- Views --- */
+        .view { display: none; }
+        .view.active { display: flex; flex-direction: column; align-items: center; gap: 30px; }
+
+        /* --- Main Container & Menu --- */
+        #main-container {
+            padding: 20px;
+            background: rgba(0, 0, 10, 0.5);
+            border: 1px solid var(--border-color);
+            border-radius: 15px;
+            box-shadow: 0 0 25px var(--primary-glow), 0 0 10px var(--secondary-glow) inset;
+            backdrop-filter: blur(5px);
+            max-width: 95vw;
+            width: clamp(320px, 90vw, 600px);
+        }
+
+        h1 {
+            font-family: var(--font-main);
+            font-size: clamp(2rem, 6vw, 3.5rem);
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            text-shadow:
+                0 0 5px var(--primary-glow), 0 0 10px var(--primary-glow),
+                0 0 20px var(--secondary-glow), 0 0 40px var(--secondary-glow);
+            text-align: center;
+        }
+
+        #menu-view .btn, #game-type-view .btn {
+            width: 80%;
+            max-width: 300px;
+            text-align: center;
+        }
+        
+        /* --- Game View --- */
+        #timer {
+            font-family: var(--font-main);
+            font-size: 1.8rem;
+            color: var(--accent-glow);
+            text-shadow: 0 0 8px var(--accent-glow);
+        }
+
+        #sudoku-grid {
+            display: grid;
+            grid-template-columns: repeat(9, 1fr);
+            width: clamp(300px, 90vw, 540px);
+            height: clamp(300px, 90vw, 540px);
+            background-color: var(--grid-bg);
+            border: 3px solid var(--border-thick-color);
+            border-radius: 10px;
+            box-shadow: 0 0 15px var(--secondary-glow);
+            gap: 1px;
+        }
+
+        .sudoku-cell {
+            width: 100%; height: 100%; background-color: transparent;
+            border: 1px solid var(--border-color); color: var(--input-cell-color);
+            font-family: var(--font-main); font-size: clamp(1rem, 4vw, 2rem);
+            text-align: center; caret-color: var(--accent-glow); transition: all 0.3s ease;
+        }
+        
+        .sudoku-cell:nth-child(3n) { border-right: 2px solid var(--border-thick-color); }
+        .sudoku-cell:nth-child(9n) { border-right: none; }
+        .sudoku-cell:nth-child(n+19):nth-child(-n+27),
+        .sudoku-cell:nth-child(n+46):nth-child(-n+54) { border-bottom: 2px solid var(--border-thick-color); }
+
+        .sudoku-cell:focus {
+            outline: none; background-color: rgba(0, 255, 255, 0.1);
+            transform: scale(1.1); z-index: 10; box-shadow: 0 0 15px var(--primary-glow);
+        }
+        
+        .sudoku-cell.fixed {
+            color: var(--fixed-cell-color); font-weight: 700;
+            background-color: rgba(255, 0, 255, 0.05); pointer-events: none;
+        }
+        .sudoku-cell.error {
+            background-color: rgba(255, 51, 51, 0.3); color: var(--error-color);
+            animation: pulse-error 0.5s;
+        }
+        @keyframes pulse-error { 0% {transform:scale(1)} 50% {transform:scale(1.1)} 100% {transform:scale(1)} }
+
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+
+        #controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+
+        .btn {
+            font-family: var(--font-main); background: transparent; border: 2px solid;
+            padding: 10px 15px; color: var(--primary-glow); border-color: var(--primary-glow);
+            text-transform: uppercase; font-size: 0.9rem; cursor: pointer; transition: all 0.3s ease;
+            box-shadow: 0 0 5px var(--primary-glow), 0 0 5px var(--primary-glow) inset;
+            text-shadow: 0 0 5px var(--primary-glow); position: relative;
+        }
+        .btn:hover, .btn:focus { background-color: var(--primary-glow); color: var(--bg-color); box-shadow: 0 0 20px var(--primary-glow); }
+        .btn:disabled { cursor: wait; opacity: 0.5; }
+        .btn#solve-btn { color: var(--secondary-glow); border-color: var(--secondary-glow); box-shadow: 0 0 5px var(--secondary-glow), 0 0 5px var(--secondary-glow) inset; text-shadow: 0 0 5px var(--secondary-glow); }
+        .btn#solve-btn:hover, .btn#solve-btn:focus { background-color: var(--secondary-glow); color: var(--bg-color); box-shadow: 0 0 20px var(--secondary-glow); }
+        .btn#ai-hint-btn { color: var(--accent-glow); border-color: var(--accent-glow); box-shadow: 0 0 5px var(--accent-glow), 0 0 5px var(--accent-glow) inset; text-shadow: 0 0 5px var(--accent-glow); }
+        .btn#ai-hint-btn:hover, .btn#ai-hint-btn:focus { background-color: var(--accent-glow); color: var(--bg-color); box-shadow: 0 0 20px var(--accent-glow); }
+        
+        /* --- High Scores View --- */
+        #high-scores-view h2 { margin-bottom: 20px; font-size: 2rem; color: var(--secondary-glow); text-shadow: 0 0 10px var(--secondary-glow); }
+        #high-scores-list { list-style: none; width: 100%; max-height: 400px; overflow-y: auto; padding-right: 10px; }
+        #high-scores-list li {
+            display: flex; justify-content: space-between; padding: 10px;
+            background: rgba(0, 255, 255, 0.05); border-radius: 5px; margin-bottom: 8px;
+            font-size: 1.1rem;
+        }
+        #high-scores-list li .player-name { color: var(--primary-glow); font-weight: bold; }
+        #high-scores-list li .player-time { color: var(--accent-glow); }
+        #high-scores-list li .player-difficulty { color: var(--text-color); text-transform: capitalize; }
+
+
+        /* --- Modals --- */
+        .modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(10, 10, 26, 0.8); backdrop-filter: blur(10px);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 100; opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+        }
+        .modal.show { opacity: 1; pointer-events: auto; }
+        .modal-content {
+            background: var(--grid-bg); padding: 30px 40px; border-radius: 10px;
+            border: 2px solid var(--secondary-glow); box-shadow: 0 0 25px var(--secondary-glow);
+            display: flex; flex-direction: column; gap: 20px; align-items: center;
+        }
+        .modal-content h2 {
+            font-family: var(--font-main); color: var(--secondary-glow);
+            text-shadow: 0 0 10px var(--secondary-glow); font-size: 1.8rem; text-transform: uppercase;
+        }
+        .modal-content input[type="text"] {
+            background: var(--bg-color); border: 1px solid var(--primary-glow);
+            border-radius: 5px; padding: 10px; color: var(--input-cell-color);
+            font-family: var(--font-body); font-size: 1.2rem; text-align: center;
+        }
+        .modal-content input[type="text"]:focus { outline: none; box-shadow: 0 0 10px var(--primary-glow); }
+
+        #message-area {
+            min-height: 30px; font-size: 1.2rem; font-weight: 500; text-align: center;
+            transition: all 0.3s ease; font-family: var(--font-body); max-width: 540px;
+        }
+        #message-area.success { color: var(--success-color); text-shadow: 0 0 10px var(--success-color); }
+        #message-area.error { color: var(--error-color); text-shadow: 0 0 10px var(--error-color); }
+        #message-area.ai-hint { color: var(--accent-glow); text-shadow: 0 0 10px var(--accent-glow); }
+
+    </style>
+</head>
+<body>
+
+    <div id="main-container">
+
+        <!-- Main Menu View -->
+        <div id="menu-view" class="view active">
+            <h1>Cyber-Sudoku</h1>
+            <button id="start-game-btn" class="btn">New Game</button>
+            <button id="high-scores-btn" class="btn">High Scores</button>
+        </div>
+
+        <!-- Game Type Selection View -->
+        <div id="game-type-view" class="view">
+            <h1>Select Mode</h1>
+            <button id="classic-sudoku-btn" class="btn">Classic Sudoku</button>
+            <button class="btn" disabled>Super Sudoku (WIP)</button>
+            <button class="btn back-to-menu-btn">Back to Menu</button>
+        </div>
+
+        <!-- Game View -->
+        <div id="game-view" class="view">
+            <div id="timer">00:00</div>
+            <div id="sudoku-grid"></div>
+            <div id="message-area"></div>
+            <div id="controls">
+                <button id="validate-btn" class="btn">Validate</button>
+                <button id="ai-hint-btn" class="btn">✨ AI Strategy</button>
+                <button id="solve-btn" class="btn">Solve</button>
+                <button class="btn back-to-menu-btn">Main Menu</button>
+            </div>
+        </div>
+
+        <!-- High Scores View -->
+        <div id="high-scores-view" class="view">
+            <h2>High Scores</h2>
+            <ul id="high-scores-list"><li>Loading...</li></ul>
+            <button class="btn back-to-menu-btn">Back to Menu</button>
+        </div>
+    </div>
+
+    <!-- Difficulty Modal -->
+    <div id="difficulty-modal" class="modal">
+        <div class="modal-content">
+            <h2>Select Difficulty</h2>
+            <button class="btn difficulty-btn" data-difficulty="easy">Easy</button>
+            <button class="btn difficulty-btn" data-difficulty="medium">Medium</button>
+            <button class="btn difficulty-btn" data-difficulty="hard">Hard</button>
+            <button class="btn difficulty-btn" data-difficulty="insane">Insane</button>
+        </div>
+    </div>
+
+    <!-- High Score Name Input Modal -->
+    <div id="name-modal" class="modal">
+        <div class="modal-content">
+            <h2>Puzzle Solved!</h2>
+            <p>Your time: <span id="final-time"></span></p>
+            <input type="text" id="player-name-input" placeholder="Enter Your Name" maxlength="15">
+            <button id="submit-score-btn" class="btn">Submit Score</button>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- Firebase Imports ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, query, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // This listener ensures that the UI setup code runs immediately once the HTML is ready.
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Firebase Setup ---
+            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "DEMO", authDomain: "DEMO", projectId: "DEMO" };
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'cyber-sudoku-default';
+            const app = initializeApp(firebaseConfig);
+            const auth = getAuth(app);
+            const db = getFirestore(app);
+
+            // --- DOM Elements ---
+            const views = document.querySelectorAll('.view');
+            const startGameBtn = document.getElementById('start-game-btn');
+            const highScoresBtn = document.getElementById('high-scores-btn');
+            const classicSudokuBtn = document.getElementById('classic-sudoku-btn');
+            const backToMenuBtns = document.querySelectorAll('.back-to-menu-btn');
+
+            const grid = document.getElementById('sudoku-grid');
+            const solveBtn = document.getElementById('solve-btn');
+            const aiHintBtn = document.getElementById('ai-hint-btn');
+            const validateBtn = document.getElementById('validate-btn');
+            const messageArea = document.getElementById('message-area');
+            const timerEl = document.getElementById('timer');
+            
+            const difficultyModal = document.getElementById('difficulty-modal');
+            const difficultyBtns = document.querySelectorAll('.difficulty-btn');
+            const nameModal = document.getElementById('name-modal');
+            const playerNameInput = document.getElementById('player-name-input');
+            const submitScoreBtn = document.getElementById('submit-score-btn');
+            const finalTimeEl = document.getElementById('final-time');
+            const highScoresList = document.getElementById('high-scores-list');
+
+            // --- Game State ---
+            const N = 9;
+            let cells = [];
+            let solution = [];
+            let gameInProgress = false;
+            let currentDifficulty = 'medium';
+            let timerInterval;
+            let seconds = 0;
+
+            // --- Navigation ---
+            function showView(viewId) {
+                views.forEach(v => v.classList.remove('active'));
+                const activeView = document.getElementById(viewId);
+                if (activeView) {
+                    activeView.classList.add('active');
+                }
+            }
+
+            startGameBtn.addEventListener('click', () => showView('game-type-view'));
+            highScoresBtn.addEventListener('click', () => {
+                showView('high-scores-view');
+                fetchHighScores();
+            });
+            classicSudokuBtn.addEventListener('click', () => difficultyModal.classList.add('show'));
+            backToMenuBtns.forEach(btn => btn.addEventListener('click', () => {
+                stopTimer();
+                gameInProgress = false;
+                showView('menu-view');
+            }));
+
+            // --- Timer ---
+            function startTimer() {
+                stopTimer();
+                seconds = 0;
+                timerEl.textContent = '00:00';
+                timerInterval = setInterval(() => {
+                    seconds++;
+                    const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+                    const secs = (seconds % 60).toString().padStart(2, '0');
+                    timerEl.textContent = `${mins}:${secs}`;
+                }, 1000);
+            }
+            function stopTimer() {
+                clearInterval(timerInterval);
+            }
+
+            // --- Sudoku Logic (largely unchanged) ---
+            function shuffle(array) { for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[array[i], array[j]] = [array[j], array[i]]; } }
+            function findEmpty(board) { for (let r = 0; r < N; r++) { for (let c = 0; c < N; c++) { if (board[r][c] === 0) return [r, c]; } } return null; }
+            function isValid(board, num, pos) { const [r, c] = pos; for (let i = 0; i < N; i++) { if (board[r][i] === num && c !== i) return false; } for (let i = 0; i < N; i++) { if (board[i][c] === num && r !== i) return false; } const boxX = Math.floor(c / 3), boxY = Math.floor(r / 3); for (let i = boxY * 3; i < boxY * 3 + 3; i++) { for (let j = boxX * 3; j < boxX * 3 + 3; j++) { if (board[i][j] === num && (i !== r || j !== c)) return false; } } return true; }
+            function solveSudoku(board) { const find = findEmpty(board); if (!find) return true; const [r, c] = find; const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9]; shuffle(numbers); for (let num of numbers) { if (isValid(board, num, [r, c])) { board[r][c] = num; if (solveSudoku(board)) return true; board[r][c] = 0; } } return false; }
+            function generatePuzzle(difficulty) { let board = Array(N).fill(0).map(() => Array(N).fill(0)); solveSudoku(board); solution = JSON.parse(JSON.stringify(board)); let attempts; switch(difficulty) { case 'easy': attempts = 40; break; case 'medium': attempts = 50; break; case 'hard': attempts = 60; break; case 'insane': attempts = 70; break; default: attempts = 50; } let puzzle = JSON.parse(JSON.stringify(solution)); let removed = 0; while (removed < attempts) { const r = Math.floor(Math.random() * N), c = Math.floor(Math.random() * N); if (puzzle[r][c] !== 0) { puzzle[r][c] = 0; removed++; } } return puzzle; }
+
+            // --- UI and Game Flow ---
+            function createGrid() { grid.innerHTML = ''; cells = []; for (let r = 0; r < N; r++) { const row = []; for (let c = 0; c < N; c++) { const cell = document.createElement('input'); cell.type = 'number'; cell.classList.add('sudoku-cell'); cell.dataset.row = r; cell.dataset.col = c; cell.addEventListener('input', handleInput); grid.appendChild(cell); row.push(cell); } cells.push(row); } }
+            function renderBoard(board) { clearMessages(); for (let r = 0; r < N; r++) { for (let c = 0; c < N; c++) { const cell = cells[r][c]; cell.classList.remove('error', 'fixed'); if (board[r][c] !== 0) { cell.value = board[r][c]; cell.classList.add('fixed'); } else { cell.value = ''; } } } }
+            function handleInput(e) { const cell = e.target; const value = parseInt(cell.value, 10); if (isNaN(value) || value < 1 || value > 9) { cell.value = ''; } else { cell.value = value; } clearMessages(); cell.classList.remove('error'); }
+            function newGame(difficulty) { currentDifficulty = difficulty; const puzzle = generatePuzzle(difficulty); renderBoard(puzzle); messageArea.textContent = `New ${difficulty} game started. Good luck!`; gameInProgress = true; startTimer(); }
+            
+            function validateSolution() {
+                if (!gameInProgress) return;
+                let mistakes = 0; let isComplete = true;
+                for (let r = 0; r < N; r++) { for (let c = 0; c < N; c++) { const cell = cells[r][c]; const userValue = parseInt(cell.value, 10); cell.classList.remove('error'); if (!cell.classList.contains('fixed')) { if (isNaN(userValue)) { isComplete = false; continue; } if (userValue !== solution[r][c]) { mistakes++; cell.classList.add('error'); } } } }
+                if (mistakes > 0) { messageArea.textContent = `Found ${mistakes} mistake(s). Keep trying!`; messageArea.className = 'error'; }
+                else if (!isComplete) { messageArea.textContent = 'Board is not complete, but no mistakes so far.'; messageArea.className = ''; }
+                else {
+                    stopTimer();
+                    gameInProgress = false;
+                    messageArea.textContent = 'SYSTEM.SOLVED :: Congratulations!';
+                    messageArea.className = 'success';
+                    finalTimeEl.textContent = timerEl.textContent;
+                    nameModal.classList.add('show');
+                }
+            }
+
+            // --- High Score Logic ---
+            async function submitScore() {
+                const playerName = playerNameInput.value.trim() || 'Anonymous';
+                const score = {
+                    name: playerName,
+                    time: seconds,
+                    timeFormatted: timerEl.textContent,
+                    difficulty: currentDifficulty,
+                    createdAt: new Date()
+                };
+                
+                try {
+                    const scoresCollection = collection(db, `artifacts/${appId}/public/data/highscores`);
+                    await addDoc(scoresCollection, score);
+                    nameModal.classList.remove('show');
+                    showView('high-scores-view');
+                    fetchHighScores();
+                } catch (error) {
+                    console.error("Error writing document: ", error);
+                    messageArea.textContent = "Error saving score.";
+                    messageArea.className = 'error';
+                }
+            }
+            
+            async function fetchHighScores() {
+                highScoresList.innerHTML = '<li>Loading...</li>';
+                try {
+                    const scoresCollection = collection(db, `artifacts/${appId}/public/data/highscores`);
+                    const q = query(scoresCollection);
+                    const querySnapshot = await getDocs(q);
+                    let scores = [];
+                    querySnapshot.forEach((doc) => {
+                        scores.push(doc.data());
+                    });
+                    
+                    const difficultyOrder = { 'insane': 4, 'hard': 3, 'medium': 2, 'easy': 1 };
+                    scores.sort((a, b) => {
+                        if (difficultyOrder[b.difficulty] !== difficultyOrder[a.difficulty]) {
+                            return difficultyOrder[b.difficulty] - difficultyOrder[a.difficulty];
+                        }
+                        return a.time - b.time;
+                    });
+
+                    highScoresList.innerHTML = '';
+                    if (scores.length === 0) {
+                        highScoresList.innerHTML = '<li>No scores yet. Be the first!</li>';
+                        return;
+                    }
+                    scores.slice(0, 20).forEach(score => {
+                        const li = document.createElement('li');
+                        li.innerHTML = `
+                            <span class="player-name">${score.name}</span>
+                            <span class="player-difficulty">${score.difficulty}</span>
+                            <span class="player-time">${score.timeFormatted}</span>
+                        `;
+                        highScoresList.appendChild(li);
+                    });
+                } catch (error) {
+                    console.error("Error fetching scores: ", error);
+                    highScoresList.innerHTML = '<li>Error loading scores.</li>';
+                }
+            }
+            
+            // --- Gemini API AI Hint Feature ---
+            async function getAIHint() {
+                if (!gameInProgress) { messageArea.textContent = 'Start a new game to get a hint.'; messageArea.className = 'error'; return; }
+                const boardState = cells.map(row => row.map(cell => parseInt(cell.value) || 0));
+                aiHintBtn.disabled = true; aiHintBtn.textContent = 'AI THINKING...';
+                messageArea.textContent = 'Contacting neural network for strategy...'; messageArea.className = 'ai-hint';
+                const prompt = `You are a world-class Sudoku expert. Provide a single, strategic hint for the given Sudoku puzzle (0=empty): ${JSON.stringify(boardState)}. Do NOT reveal the answer. Explain the logic a human could use to find the next move (e.g., "Look at the middle row. There is only one possible place for the number 7."). Provide only the hint text as a single, concise string.`;
+                try {
+                    const apiKey = "";
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                    const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+                    const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+                    const result = await response.json();
+                    if (result.candidates && result.candidates.length > 0) { messageArea.textContent = result.candidates[0].content.parts[0].text; messageArea.className = 'ai-hint'; } 
+                    else { throw new Error("No hint received from AI."); }
+                } catch (error) { console.error("Gemini API Error:", error); messageArea.textContent = "Error connecting to AI."; messageArea.className = 'error'; } 
+                finally { aiHintBtn.disabled = false; aiHintBtn.innerHTML = '✨ AI Strategy'; }
+            }
+
+            function solveBoard() {
+                if (!gameInProgress) return;
+                stopTimer();
+                for (let r = 0; r < N; r++) { for (let c = 0; c < N; c++) { cells[r][c].value = solution[r][c]; cells[r][c].classList.remove('error'); } }
+                messageArea.textContent = 'SYSTEM.OVERRIDE :: Solution displayed.'; messageArea.className = 'success';
+                gameInProgress = false;
+            }
+            function clearMessages() { messageArea.textContent = ''; messageArea.className = ''; }
+
+            // --- Event Listeners ---
+            difficultyBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const difficulty = btn.dataset.difficulty;
+                    difficultyModal.classList.remove('show');
+                    showView('game-view');
+                    newGame(difficulty);
+                });
+            });
+            submitScoreBtn.addEventListener('click', submitScore);
+            validateBtn.addEventListener('click', validateSolution);
+            aiHintBtn.addEventListener('click', getAIHint);
+            solveBtn.addEventListener('click', solveBoard);
+
+            // --- App Initialization ---
+            async function initializeAppAndAuth() {
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                    console.log("Firebase Authentication successful.");
+                } catch (error) {
+                    console.error("Firebase Authentication Failed:", error);
+                    highScoresBtn.disabled = true;
+                    submitScoreBtn.disabled = true;
+                }
+            }
+
+            // --- Initial Setup ---
+            createGrid();
+            showView('menu-view');
+            initializeAppAndAuth(); // Start auth process in the background
+        });
+    </script>
+</body>
+</html>
