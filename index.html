@@ -138,8 +138,8 @@
         .btn:disabled { cursor: wait; opacity: 0.5; }
         .btn#solve-btn { color: var(--secondary-glow); border-color: var(--secondary-glow); box-shadow: 0 0 5px var(--secondary-glow), 0 0 5px var(--secondary-glow) inset; text-shadow: 0 0 5px var(--secondary-glow); }
         .btn#solve-btn:hover, .btn#solve-btn:focus { background-color: var(--secondary-glow); color: var(--bg-color); box-shadow: 0 0 20px var(--secondary-glow); }
-        .btn#ai-hint-btn { color: var(--accent-glow); border-color: var(--accent-glow); box-shadow: 0 0 5px var(--accent-glow), 0 0 5px var(--accent-glow) inset; text-shadow: 0 0 5px var(--accent-glow); }
-        .btn#ai-hint-btn:hover, .btn#ai-hint-btn:focus { background-color: var(--accent-glow); color: var(--bg-color); box-shadow: 0 0 20px var(--accent-glow); }
+        .btn#ai-hint-btn, .btn#get-analysis-btn { color: var(--accent-glow); border-color: var(--accent-glow); box-shadow: 0 0 5px var(--accent-glow), 0 0 5px var(--accent-glow) inset; text-shadow: 0 0 5px var(--accent-glow); }
+        .btn#ai-hint-btn:hover, .btn#ai-hint-btn:focus, .btn#get-analysis-btn:hover, .btn#get-analysis-btn:focus { background-color: var(--accent-glow); color: var(--bg-color); box-shadow: 0 0 20px var(--accent-glow); }
         
         /* --- High Scores View --- */
         #high-scores-view h2 { margin-bottom: 20px; font-size: 2rem; color: var(--secondary-glow); text-shadow: 0 0 10px var(--secondary-glow); }
@@ -185,6 +185,18 @@
         #message-area.success { color: var(--success-color); text-shadow: 0 0 10px var(--success-color); }
         #message-area.error { color: var(--error-color); text-shadow: 0 0 10px var(--error-color); }
         #message-area.ai-hint { color: var(--accent-glow); text-shadow: 0 0 10px var(--accent-glow); }
+        
+        #ai-analysis-area {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(0, 255, 255, 0.05);
+            border-left: 3px solid var(--accent-glow);
+            color: var(--accent-glow);
+            font-size: 1rem;
+            width: 100%;
+            min-height: 50px;
+            text-align: left;
+        }
 
     </style>
 </head>
@@ -246,6 +258,8 @@
             <p>Your time: <span id="final-time"></span></p>
             <input type="text" id="player-name-input" placeholder="Enter Your Name" maxlength="15">
             <button id="submit-score-btn" class="btn">Submit Score</button>
+            <button id="get-analysis-btn" class="btn">✨ Get AI Analysis</button>
+            <div id="ai-analysis-area" style="display: none;"></div>
         </div>
     </div>
 
@@ -255,7 +269,6 @@
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, query, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // This listener ensures that the UI setup code runs immediately once the HTML is ready.
         document.addEventListener('DOMContentLoaded', () => {
             // --- Firebase Setup ---
             const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "DEMO", authDomain: "DEMO", projectId: "DEMO" };
@@ -270,14 +283,12 @@
             const highScoresBtn = document.getElementById('high-scores-btn');
             const classicSudokuBtn = document.getElementById('classic-sudoku-btn');
             const backToMenuBtns = document.querySelectorAll('.back-to-menu-btn');
-
             const grid = document.getElementById('sudoku-grid');
             const solveBtn = document.getElementById('solve-btn');
             const aiHintBtn = document.getElementById('ai-hint-btn');
             const validateBtn = document.getElementById('validate-btn');
             const messageArea = document.getElementById('message-area');
             const timerEl = document.getElementById('timer');
-            
             const difficultyModal = document.getElementById('difficulty-modal');
             const difficultyBtns = document.querySelectorAll('.difficulty-btn');
             const nameModal = document.getElementById('name-modal');
@@ -285,11 +296,14 @@
             const submitScoreBtn = document.getElementById('submit-score-btn');
             const finalTimeEl = document.getElementById('final-time');
             const highScoresList = document.getElementById('high-scores-list');
+            const getAnalysisBtn = document.getElementById('get-analysis-btn');
+            const aiAnalysisArea = document.getElementById('ai-analysis-area');
 
             // --- Game State ---
             const N = 9;
             let cells = [];
             let solution = [];
+            let initialPuzzle = [];
             let gameInProgress = false;
             let currentDifficulty = 'medium';
             let timerInterval;
@@ -304,18 +318,6 @@
                 }
             }
 
-            startGameBtn.addEventListener('click', () => showView('game-type-view'));
-            highScoresBtn.addEventListener('click', () => {
-                showView('high-scores-view');
-                fetchHighScores();
-            });
-            classicSudokuBtn.addEventListener('click', () => difficultyModal.classList.add('show'));
-            backToMenuBtns.forEach(btn => btn.addEventListener('click', () => {
-                stopTimer();
-                gameInProgress = false;
-                showView('menu-view');
-            }));
-
             // --- Timer ---
             function startTimer() {
                 stopTimer();
@@ -328,35 +330,184 @@
                     timerEl.textContent = `${mins}:${secs}`;
                 }, 1000);
             }
+
             function stopTimer() {
                 clearInterval(timerInterval);
             }
 
-            // --- Sudoku Logic (largely unchanged) ---
-            function shuffle(array) { for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[array[i], array[j]] = [array[j], array[i]]; } }
-            function findEmpty(board) { for (let r = 0; r < N; r++) { for (let c = 0; c < N; c++) { if (board[r][c] === 0) return [r, c]; } } return null; }
-            function isValid(board, num, pos) { const [r, c] = pos; for (let i = 0; i < N; i++) { if (board[r][i] === num && c !== i) return false; } for (let i = 0; i < N; i++) { if (board[i][c] === num && r !== i) return false; } const boxX = Math.floor(c / 3), boxY = Math.floor(r / 3); for (let i = boxY * 3; i < boxY * 3 + 3; i++) { for (let j = boxX * 3; j < boxX * 3 + 3; j++) { if (board[i][j] === num && (i !== r || j !== c)) return false; } } return true; }
-            function solveSudoku(board) { const find = findEmpty(board); if (!find) return true; const [r, c] = find; const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9]; shuffle(numbers); for (let num of numbers) { if (isValid(board, num, [r, c])) { board[r][c] = num; if (solveSudoku(board)) return true; board[r][c] = 0; } } return false; }
-            function generatePuzzle(difficulty) { let board = Array(N).fill(0).map(() => Array(N).fill(0)); solveSudoku(board); solution = JSON.parse(JSON.stringify(board)); let attempts; switch(difficulty) { case 'easy': attempts = 40; break; case 'medium': attempts = 50; break; case 'hard': attempts = 60; break; case 'insane': attempts = 70; break; default: attempts = 50; } let puzzle = JSON.parse(JSON.stringify(solution)); let removed = 0; while (removed < attempts) { const r = Math.floor(Math.random() * N), c = Math.floor(Math.random() * N); if (puzzle[r][c] !== 0) { puzzle[r][c] = 0; removed++; } } return puzzle; }
+            // --- Sudoku Logic ---
+            function shuffle(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+            }
+
+            function findEmpty(board) {
+                for (let r = 0; r < N; r++) {
+                    for (let c = 0; c < N; c++) {
+                        if (board[r][c] === 0) {
+                            return [r, c];
+                        }
+                    }
+                }
+                return null;
+            }
+
+            function isValid(board, num, pos) {
+                const [r, c] = pos;
+                for (let i = 0; i < N; i++) {
+                    if (board[r][i] === num && c !== i) return false;
+                }
+                for (let i = 0; i < N; i++) {
+                    if (board[i][c] === num && r !== i) return false;
+                }
+                const boxX = Math.floor(c / 3);
+                const boxY = Math.floor(r / 3);
+                for (let i = boxY * 3; i < boxY * 3 + 3; i++) {
+                    for (let j = boxX * 3; j < boxX * 3 + 3; j++) {
+                        if (board[i][j] === num && (i !== r || j !== c)) return false;
+                    }
+                }
+                return true;
+            }
+
+            function solveSudoku(board) {
+                const find = findEmpty(board);
+                if (!find) return true;
+                const [r, c] = find;
+                const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+                shuffle(numbers);
+                for (let num of numbers) {
+                    if (isValid(board, num, [r, c])) {
+                        board[r][c] = num;
+                        if (solveSudoku(board)) return true;
+                        board[r][c] = 0;
+                    }
+                }
+                return false;
+            }
+
+            function generatePuzzle(difficulty) {
+                let board = Array(N).fill(0).map(() => Array(N).fill(0));
+                solveSudoku(board);
+                solution = JSON.parse(JSON.stringify(board));
+                let attempts;
+                switch (difficulty) {
+                    case 'easy': attempts = 40; break;
+                    case 'medium': attempts = 50; break;
+                    case 'hard': attempts = 60; break;
+                    case 'insane': attempts = 70; break;
+                    default: attempts = 50;
+                }
+                let puzzle = JSON.parse(JSON.stringify(solution));
+                let removed = 0;
+                while (removed < attempts) {
+                    const r = Math.floor(Math.random() * N);
+                    const c = Math.floor(Math.random() * N);
+                    if (puzzle[r][c] !== 0) {
+                        puzzle[r][c] = 0;
+                        removed++;
+                    }
+                }
+                initialPuzzle = JSON.parse(JSON.stringify(puzzle)); // Save initial state
+                return puzzle;
+            }
 
             // --- UI and Game Flow ---
-            function createGrid() { grid.innerHTML = ''; cells = []; for (let r = 0; r < N; r++) { const row = []; for (let c = 0; c < N; c++) { const cell = document.createElement('input'); cell.type = 'number'; cell.classList.add('sudoku-cell'); cell.dataset.row = r; cell.dataset.col = c; cell.addEventListener('input', handleInput); grid.appendChild(cell); row.push(cell); } cells.push(row); } }
-            function renderBoard(board) { clearMessages(); for (let r = 0; r < N; r++) { for (let c = 0; c < N; c++) { const cell = cells[r][c]; cell.classList.remove('error', 'fixed'); if (board[r][c] !== 0) { cell.value = board[r][c]; cell.classList.add('fixed'); } else { cell.value = ''; } } } }
-            function handleInput(e) { const cell = e.target; const value = parseInt(cell.value, 10); if (isNaN(value) || value < 1 || value > 9) { cell.value = ''; } else { cell.value = value; } clearMessages(); cell.classList.remove('error'); }
-            function newGame(difficulty) { currentDifficulty = difficulty; const puzzle = generatePuzzle(difficulty); renderBoard(puzzle); messageArea.textContent = `New ${difficulty} game started. Good luck!`; gameInProgress = true; startTimer(); }
-            
+            function createGrid() {
+                grid.innerHTML = '';
+                cells = [];
+                for (let r = 0; r < N; r++) {
+                    const row = [];
+                    for (let c = 0; c < N; c++) {
+                        const cell = document.createElement('input');
+                        cell.type = 'number';
+                        cell.classList.add('sudoku-cell');
+                        cell.dataset.row = r;
+                        cell.dataset.col = c;
+                        cell.addEventListener('input', handleInput);
+                        grid.appendChild(cell);
+                        row.push(cell);
+                    }
+                    cells.push(row);
+                }
+            }
+
+            function renderBoard(board) {
+                clearMessages();
+                for (let r = 0; r < N; r++) {
+                    for (let c = 0; c < N; c++) {
+                        const cell = cells[r][c];
+                        cell.classList.remove('error', 'fixed');
+                        if (board[r][c] !== 0) {
+                            cell.value = board[r][c];
+                            cell.classList.add('fixed');
+                        } else {
+                            cell.value = '';
+                        }
+                    }
+                }
+            }
+
+            function handleInput(e) {
+                const cell = e.target;
+                const value = parseInt(cell.value, 10);
+                if (isNaN(value) || value < 1 || value > 9) {
+                    cell.value = '';
+                } else {
+                    cell.value = value;
+                }
+                clearMessages();
+                cell.classList.remove('error');
+            }
+
+            function newGame(difficulty) {
+                currentDifficulty = difficulty;
+                const puzzle = generatePuzzle(difficulty);
+                renderBoard(puzzle);
+                messageArea.textContent = `New ${difficulty} game started. Good luck!`;
+                gameInProgress = true;
+                startTimer();
+            }
+
             function validateSolution() {
                 if (!gameInProgress) return;
-                let mistakes = 0; let isComplete = true;
-                for (let r = 0; r < N; r++) { for (let c = 0; c < N; c++) { const cell = cells[r][c]; const userValue = parseInt(cell.value, 10); cell.classList.remove('error'); if (!cell.classList.contains('fixed')) { if (isNaN(userValue)) { isComplete = false; continue; } if (userValue !== solution[r][c]) { mistakes++; cell.classList.add('error'); } } } }
-                if (mistakes > 0) { messageArea.textContent = `Found ${mistakes} mistake(s). Keep trying!`; messageArea.className = 'error'; }
-                else if (!isComplete) { messageArea.textContent = 'Board is not complete, but no mistakes so far.'; messageArea.className = ''; }
-                else {
+                let mistakes = 0;
+                let isComplete = true;
+                for (let r = 0; r < N; r++) {
+                    for (let c = 0; c < N; c++) {
+                        const cell = cells[r][c];
+                        const userValue = parseInt(cell.value, 10);
+                        cell.classList.remove('error');
+                        if (!cell.classList.contains('fixed')) {
+                            if (isNaN(userValue)) {
+                                isComplete = false;
+                                continue;
+                            }
+                            if (userValue !== solution[r][c]) {
+                                mistakes++;
+                                cell.classList.add('error');
+                            }
+                        }
+                    }
+                }
+                if (mistakes > 0) {
+                    messageArea.textContent = `Found ${mistakes} mistake(s). Keep trying!`;
+                    messageArea.className = 'error';
+                } else if (!isComplete) {
+                    messageArea.textContent = 'Board is not complete, but no mistakes so far.';
+                    messageArea.className = '';
+                } else {
                     stopTimer();
                     gameInProgress = false;
                     messageArea.textContent = 'SYSTEM.SOLVED :: Congratulations!';
                     messageArea.className = 'success';
                     finalTimeEl.textContent = timerEl.textContent;
+                    // Reset and show the analysis button/area
+                    aiAnalysisArea.style.display = 'none';
+                    aiAnalysisArea.textContent = '';
+                    getAnalysisBtn.style.display = 'inline-block';
                     nameModal.classList.add('show');
                 }
             }
@@ -424,12 +575,18 @@
                 }
             }
             
-            // --- Gemini API AI Hint Feature ---
+            // --- Gemini API Features ---
             async function getAIHint() {
-                if (!gameInProgress) { messageArea.textContent = 'Start a new game to get a hint.'; messageArea.className = 'error'; return; }
+                if (!gameInProgress) {
+                    messageArea.textContent = 'Start a new game to get a hint.';
+                    messageArea.className = 'error';
+                    return;
+                }
                 const boardState = cells.map(row => row.map(cell => parseInt(cell.value) || 0));
-                aiHintBtn.disabled = true; aiHintBtn.textContent = 'AI THINKING...';
-                messageArea.textContent = 'Contacting neural network for strategy...'; messageArea.className = 'ai-hint';
+                aiHintBtn.disabled = true;
+                aiHintBtn.textContent = 'AI THINKING...';
+                messageArea.textContent = 'Contacting neural network for strategy...';
+                messageArea.className = 'ai-hint';
                 const prompt = `You are a world-class Sudoku expert. Provide a single, strategic hint for the given Sudoku puzzle (0=empty): ${JSON.stringify(boardState)}. Do NOT reveal the answer. Explain the logic a human could use to find the next move (e.g., "Look at the middle row. There is only one possible place for the number 7."). Provide only the hint text as a single, concise string.`;
                 try {
                     const apiKey = "";
@@ -438,22 +595,95 @@
                     const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                     if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
                     const result = await response.json();
-                    if (result.candidates && result.candidates.length > 0) { messageArea.textContent = result.candidates[0].content.parts[0].text; messageArea.className = 'ai-hint'; } 
-                    else { throw new Error("No hint received from AI."); }
-                } catch (error) { console.error("Gemini API Error:", error); messageArea.textContent = "Error connecting to AI."; messageArea.className = 'error'; } 
-                finally { aiHintBtn.disabled = false; aiHintBtn.innerHTML = '✨ AI Strategy'; }
+                    if (result.candidates && result.candidates.length > 0) {
+                        messageArea.textContent = result.candidates[0].content.parts[0].text;
+                        messageArea.className = 'ai-hint';
+                    } else {
+                        throw new Error("No hint received from AI.");
+                    }
+                } catch (error) {
+                    console.error("Gemini API Error:", error);
+                    messageArea.textContent = "Error connecting to AI.";
+                    messageArea.className = 'error';
+                } finally {
+                    aiHintBtn.disabled = false;
+                    aiHintBtn.innerHTML = '✨ AI Strategy';
+                }
+            }
+            
+            async function getAIPostGameAnalysis() {
+                getAnalysisBtn.disabled = true;
+                aiAnalysisArea.style.display = 'block';
+                aiAnalysisArea.textContent = 'Analyzing performance...';
+
+                const prompt = `You are a Sudoku expert and an encouraging coach. Analyze the following game and provide a brief, fun, and insightful post-game analysis.
+
+                - Puzzle Difficulty: ${currentDifficulty}
+                - Time to solve: ${timerEl.textContent}
+                - Initial Puzzle State (0 is empty): ${JSON.stringify(initialPuzzle)}
+                
+                Your analysis should:
+                1. Make a quick, insightful comment about the puzzle itself. Was there a tricky part? A common pattern?
+                2. Comment on the player's time in an encouraging way, relative to the difficulty.
+                3. End with a positive and motivating sign-off.
+                
+                Example: "Impressive work! That ${currentDifficulty} puzzle had a tricky 'X-Wing' pattern in the corner, but you navigated it perfectly. Solving it in ${timerEl.textContent} is a fantastic time. Keep sharpening those skills, and you'll be unstoppable!"
+
+                Provide only the analysis text as a single, concise string.`;
+
+                try {
+                    const apiKey = "";
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                    const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+                    const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+                    const result = await response.json();
+                    if (result.candidates && result.candidates.length > 0) {
+                        aiAnalysisArea.textContent = result.candidates[0].content.parts[0].text;
+                    } else {
+                        throw new Error("No analysis received from AI.");
+                    }
+                } catch (error) {
+                    console.error("Gemini API Error:", error);
+                    aiAnalysisArea.textContent = "Error generating analysis.";
+                } finally {
+                    getAnalysisBtn.style.display = 'none'; // Hide button after use
+                }
             }
 
             function solveBoard() {
                 if (!gameInProgress) return;
                 stopTimer();
-                for (let r = 0; r < N; r++) { for (let c = 0; c < N; c++) { cells[r][c].value = solution[r][c]; cells[r][c].classList.remove('error'); } }
-                messageArea.textContent = 'SYSTEM.OVERRIDE :: Solution displayed.'; messageArea.className = 'success';
+                for (let r = 0; r < N; r++) {
+                    for (let c = 0; c < N; c++) {
+                        cells[r][c].value = solution[r][c];
+                        cells[r][c].classList.remove('error');
+                    }
+                }
+                messageArea.textContent = 'SYSTEM.OVERRIDE :: Solution displayed.';
+                messageArea.className = 'success';
                 gameInProgress = false;
             }
-            function clearMessages() { messageArea.textContent = ''; messageArea.className = ''; }
 
-            // --- Event Listeners ---
+            function clearMessages() {
+                messageArea.textContent = '';
+                messageArea.className = '';
+            }
+
+            // --- App Initialization ---
+            
+            // Event Listeners
+            startGameBtn.addEventListener('click', () => showView('game-type-view'));
+            highScoresBtn.addEventListener('click', () => {
+                showView('high-scores-view');
+                fetchHighScores();
+            });
+            classicSudokuBtn.addEventListener('click', () => difficultyModal.classList.add('show'));
+            backToMenuBtns.forEach(btn => btn.addEventListener('click', () => {
+                stopTimer();
+                gameInProgress = false;
+                showView('menu-view');
+            }));
             difficultyBtns.forEach(btn => {
                 btn.addEventListener('click', () => {
                     const difficulty = btn.dataset.difficulty;
@@ -465,10 +695,14 @@
             submitScoreBtn.addEventListener('click', submitScore);
             validateBtn.addEventListener('click', validateSolution);
             aiHintBtn.addEventListener('click', getAIHint);
+            getAnalysisBtn.addEventListener('click', getAIPostGameAnalysis);
             solveBtn.addEventListener('click', solveBoard);
 
-            // --- App Initialization ---
-            async function initializeAppAndAuth() {
+            // Initial UI Setup
+            createGrid();
+            showView('menu-view');
+            
+            async function initializeAuth() {
                 try {
                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                         await signInWithCustomToken(auth, __initial_auth_token);
@@ -483,10 +717,8 @@
                 }
             }
 
-            // --- Initial Setup ---
-            createGrid();
-            showView('menu-view');
-            initializeAppAndAuth(); // Start auth process in the background
+            // Start authentication in the background
+            initializeAuth();
         });
     </script>
 </body>
